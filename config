@@ -171,7 +171,7 @@ ctx.sort_executable = r'sort'
 # Change the following line to True if the conversion should only
 # include the trunk of the repository (i.e., all branches and tags
 # should be omitted from the conversion):
-ctx.trunk_only = False
+ctx.trunk_only = True
 
 # How to convert CVS author names, log messages, and filenames to
 # Unicode.  The first argument to CVSTextDecoder is a list of encoders
@@ -539,7 +539,7 @@ run_options.set_project(
     # The filesystem path to the part of the CVS repository (*not* a
     # CVS working copy) that should be converted.  This may be a
     # subdirectory (i.e., a module) within a larger CVS repository.
-    r'cvs-repo',
+    r'cvs-repo/gentoo-x86',
 
     # A list of symbol transformations that can be used to rename
     # symbols in this project.

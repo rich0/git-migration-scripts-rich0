@@ -1,0 +1,43 @@
+Note; this is raw, and likes to dump things in cwd- logs namely.
+
+To run it, first get yourself a copy of gentoo-x86 CVS; place that in
+cvs-repo in this directory- this can be a partial copy of CVS, or full-
+that said, it needs to conform to thus:
+
+$(pwd)/cvs-repo/CVSROOT
+$(pwd)/cvs-repo/gentoo-x86/*
+
+From there, ./script.sh is your main point of entry; it'll process that,
+going parallel, using $(pwd)/output for temp space- it's suggested that
+be tmpfs (much like cvs-repo).
+
+As each category/directory/component is finished, a git repo is generated,
+some basic blob rewrites are done ($Header related).  Two core directories
+will exist in each; cvs2svn-tmp (which holds the fast-import data w/in), and
+git; a recomposed bare git repository of that slice of gentoo-x86 history.
+
+Once that category/component is finished, it's moved into $(pwd)/final , and
+another component is started; script.sh currently will run at grep -c MHz /proc/cpuinfo parallelism.
+
+Upon finishing the cvs->git conversion, the content needs to be reintegrated.
+
+create-git.sh exists for this.  It looks in $(pwd)/final, and creates the new
+repo in $(pwd)/git/work; this is a bare repo.
+
+Roughly, it does this via generating an empty repo, setting up alternates into slice of
+history, setting up refs/heads/source/* space for each slice of history,
+then forcing a date-ordered fast-export- manipulating the resultant stream
+(stripping resets, rewriting the commit field to point to refs/heads/master, rewriting
+commit messages to convert some basic structured information into git footers), and
+spitting that out.
+
+It creates two dumps of intermediate data as it's going; export-stream-raw , and
+export-stream-rewritten; the first is git fast-export raw output, the second is
+the rewritten stream.  Each are ~490MB (they're small due to the fact that
+since we're exporting/importing w/in the same repo, we don't have to send blobs
+through the stream- they can be directly referenced in the command stream).
+
+Now that that is done, we have a recomposed history in refs/heads/master.
+From there, we do prun'ing/gc'ing, and force a git repack -Adf.
+
+That repo is ready to go at that point.
