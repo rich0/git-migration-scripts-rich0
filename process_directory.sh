@@ -9,8 +9,10 @@ f() {
   ln -s "${root}/gentoo-x86/$1" "${output}/cvs-repo/gentoo-x86/$1"
   #ln -s "${root}/gentoo-x86/Attic" "${output}/cvs-repo/gentoo-x86/Attic"
   ln -s "$(pwd)/config" "${output}/config"
+  ln -s "$(pwd)/gentoo_mailmap.py" "${output}/gentoo_mailmap.py"
   # Note- this must be canonical path, else it screws up our $Header rewriting.
   cd "$(readlink -f "${output}" )"
+  export PYTHONPATH="${output}${PYTHONPATH:+:${PYTHONPATH}}"
   time cvs2git --options config -vv
   cd git
   git init --bare

@@ -481,17 +481,12 @@ ctx.retain_conflicting_attic_files = False
 # with "u" as a prefix) or 8-bit strings in the utf-8 encoding.
 # Please substitute your own project's usernames here to use with the
 # author_transforms option of GitOutputOption below.
-author_transforms={
-    'jrandom' : ('J. Random', 'jrandom@example.com'),
-    'mhagger' : ('Michael Haggerty', 'mhagger@alum.mit.edu'),
-    'brane' : (u'Branko Čibej', 'brane@xbc.nu'),
-    'ringstrom' : ('Tobias Ringström', 'tobias@ringstrom.mine.nu'),
-    'dionisos' : (u'Erik Hülsmann', 'e.huelsmann@gmx.net'),
 
-    # This one will be used for commits for which CVS doesn't record
-    # the original author, as explained above.
-    'cvs2svn' : ('cvs2svn', 'admin@example.com'),
-    }
+import gentoo_mailmap
+author_transforms = gentoo_mailmap.mailmap.copy()
+# This one will be used for commits for which CVS doesn't record
+# the original author, as explained above.
+author_transforms['cvs2svn'] = ('cvs2svn', 'admin@gentoo.org')
 
 # This is the main option that causes cvs2svn to output to a
 # "fastimport"-format dumpfile rather than to Subversion:

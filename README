@@ -7,6 +7,8 @@ that said, it needs to conform to thus:
 $(pwd)/cvs-repo/CVSROOT
 $(pwd)/cvs-repo/gentoo-x86/*
 
+From there, get yourself a userinfo.xml, and place it into $(pwd).
+
 From there, ./script.sh is your main point of entry; it'll process that,
 going parallel, using $(pwd)/output for temp space- it's suggested that
 be tmpfs (much like cvs-repo).

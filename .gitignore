@@ -1,3 +1,8 @@
-cvs-repo
-output
-final
+/cvs-repo
+/output
+/final
+/git
+/export-stream-raw
+/export-stream-rewritten
+/userinfo.xml
+/gentoo_mailmap.py

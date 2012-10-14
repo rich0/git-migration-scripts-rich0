@@ -5,6 +5,7 @@ proc_count=$(grep -c MHz /proc/cpuinfo)
 
 rm -rf git/* git/.git final/*
 mkdir git -p
+./create-mailmap.py userinfo.xml > gentoo_mailmap.py || { echo "failed to create mailmap."; exit 1; }
 # Prioritize the larger categories first; they typically will have
 # the most revs, thus start them first.
 time { \
