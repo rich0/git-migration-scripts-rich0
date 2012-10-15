@@ -22,5 +22,10 @@ if __name__ == '__main__':
     sys.exit(1)
   
   mailmap = dict(main(open(sys.argv[1], 'rb')))
+  # Add some known missing aliases.
+  mailmap['uid2078'] = mailmap['jer']
+  mailmap['uid2153'] = mailmap['remi']
+  mailmap['uid2162'] = mailmap['bicatali']
+  mailmap['uid895'] = mailmap['genstef']
   sys.stdout.write("mailmap=%r\n" % (mailmap,))
   sys.exit(0)
