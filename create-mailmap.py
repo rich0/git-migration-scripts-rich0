@@ -5,8 +5,14 @@ def main(source):
   root = etree.parse(source).getroot()
   for user in root.findall('user'):
     fullname = user.findall('realname')[0].get('fullname')
+    # note we don't actually know jerrym's name; thus just leave
+    # it empty.
+    if fullname.lower() == 'unknown':
+      fullname = ''
     # Compute email ourselves...
     username = user.get('username')
+    if username in ('luke-jr',):
+      fullname = ''
     assert username
     email = '%s@gentoo.org' % username
     yield username, (fullname, email)
