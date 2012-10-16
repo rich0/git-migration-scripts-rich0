@@ -12,6 +12,9 @@ mangler.append(functools.partial(
   re.compile(r"^\(paludis (0.1.*)\)$", re.M|re.I).sub,
     r"Package-Manager: paludis-\1/"))
 mangler.append(functools.partial(
+  re.compile(r'^\(portage version: *([^,\n)]*), +unsigned Manifest commit\)$', re.M|re.I).sub,
+    r'Package-Manager: portage-\1'))
+mangler.append(functools.partial(
   re.compile(r"^\(portage version: (.*)\)$", re.M|re.I).sub,
     r"Package-Manager: portage-\1"))
 
