@@ -13,28 +13,24 @@ git config core.logAllRefUpdates false
 git config prune.expire now
 mkdir -p objects/info
 targets=( $(find ../final/ -maxdepth 1 -mindepth 1 -printf '../final/%P/\n' | \
-    xargs -n1 readlink -f | tee >(sed -e 's:$:/git/objects:' > objects/info/alternates) ) )
-for x in "${targets[@]}"; do
-  rev=$(git --git-dir $x/git rev-list -1 master 2> /dev/null)
-  [ -z "$rev" ] && { echo "no content: $x"; continue; }
-  x="refs/heads/source/$(basename $x)"
-  git update-ref "$x" $rev
-done
+  xargs -n1 readlink -f | \
+    while read l; do
+      [ -e "$l/cvs2svn-tmp/git-dump.dat" ] || continue;
+      echo "$l/git/objects" >> objects/info/alternates
+      echo "$l"
+    done
+  )
+)
 
-echo "linearizing history, and rewriting messages..."
-
+echo "loading all commits, linearizing, and rewriting history..."
 time (
-  git fast-export --progress=1000 --all --reverse --date-order --no-data | \
-    tee ../export-stream-raw | \
-    "${root}/rewrite-commit-dump.py" | \
+  "${root}/rewrite-commit-dump.py" "${targets[@]}" | \
     tee ../export-stream-rewritten | \
     git fast-import
 ) 2>&1 | tee git-creation.log
 
 echo "recomposed; repacking and breaking alternate linkage..."
-# Wipe the strong refs to the other repos...
-git ls-remote . refs/heads/source/'*' | awk '{print $2;}' | xargs -n1 git update-ref -d
-# Localize the content...
+# Localize the content we actual use out of the alternates...
 time git repack -Adf --window=100 --depth=100
 # Wipe the alternates.
 rm objects/info/alternates

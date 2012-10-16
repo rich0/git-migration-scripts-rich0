@@ -16,10 +16,12 @@ f() {
   time cvs2git --options config -vv
   cd git
   git init --bare
-  { "${base}/rewrite-blob-data.py" ../cvs2svn-tmp/git-blob.dat;
-    cat ../cvs2svn-tmp/git-dump.dat;
-  } | git fast-import
-  rm -rf "${final}" git-work
+  # Note we're only pull in blob data here; this intentional- we need to
+  # interlace the commit objects together, these git object pools will be
+  # be used as alternates for the final repo combination.
+  "${base}/rewrite-blob-data.py" ../cvs2svn-tmp/git-blob.dat | \
+    git fast-import --export-marks=../cvs2svn-tmp/git-blob.idx
+  rm -rf "${final}"
   cd "$root"
   mv "$output" "${final}"
   set +x
