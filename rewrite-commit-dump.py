@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import collections
 import functools
 import itertools
 import operator
@@ -11,24 +12,83 @@ mangler = []
 mangler.append(functools.partial(
   re.compile(r"^\(paludis (0.1.*)\)$", re.M|re.I).sub,
     r"Package-Manager: paludis-\1/"))
+# Special case not covered by the main portage mangler.
 mangler.append(functools.partial(
-  re.compile(r'^\(portage version: *([^,\n)]*), +unsigned Manifest commit\)$', re.M|re.I).sub,
+  re.compile('r^\(Portage (2\.1\.2[^\)]+)\)$', re.M|re.I).sub,
     r'Package-Manager: portage-\1'))
 mangler.append(functools.partial(
-  re.compile(r"^\(portage version: (.*)\)$", re.M|re.I).sub,
-    r"Package-Manager: portage-\1"))
+  re.compile(r' *\((?:manifest +recommit|(?:un)?signed +manifest +commit)\) *$', re.M|re.I).sub,
+    r''))
 
-fields = ('author', 'committer', 'msg', 'files', 'timestamp')
+def mangle_portage(match, allowed=frozenset('abcdef0123456789')):
+  content = match.group()
+  assert isinstance(content, (unicode, str))
+  content = content.strip()
+  assert ('(', ')') == (content[0], content[-1]), content
+  content = content[1:-1]
+  values = [x.strip() for x in content.split(',')]
+  # portage version: blah
+  version = values[0].split(':', 1)[1].strip()
+  results = ['Package-Manager: portage-' + version]
+  values = [x for x in values if 'unsigned manifest' not in x.lower()]
+  repoman = [x for x in values if 'repoman options:' in x.lower()]
+  assert len(repoman) <= 1, content
+  if repoman:
+    repoman = ' '.join(repoman[0].split(':', 1)[1].split())
+    results.append('RepoMan-Options: ' + repoman)
+  values = [x.lower() for x in values]
+  signage = [x for x in values if 'key' in x and 'signed' in x and 'unsigned' not in x]
+  assert len(signage) <= 1, content
+  if signage:
+    signage = signage[0].rstrip().rsplit(None, 1)[1]
+    if signage.startswith('0x'):
+      signage = signage[2:]
+    if signage in ('key', 'ultrabug'):
+      # Known bad keys; this is why portage needs to do basic enforcement...
+      signage = None
+    elif '@' in signage:
+      # Bleh.  be paranoid, ensure case wasn't affected.
+      assert signage in content, (signage, content)
+      signage = '<%s>' % signage
+    elif signage.endswith('!'):
+      assert allowed.issuperset(signage[:-1]), content
+    else:
+      assert allowed.issuperset(signage), content
+    if signage:
+      results.append('Manifest-Sign-Key: 0x' + signage.upper())
+  return "\n".join(results)
+
+# the TM/R is for crap like this:
+# (Portage version: 2.2_pre7/cvs/Linux 2.6.25.4 Intel(R) Core(TM)2 Duo CPU E6750 @ 2.66GHz)
+mangler.append(functools.partial(
+  re.compile(r'^\(portage version: +(?:\((?:tm|r)\)|[^\)\n])+\)$', re.M|re.I).sub,
+    mangle_portage))
+
+known_footers = ('Package-Manager', 'RepoMan-Options', 'Manifest-Sign-Key')
+fields = ('author', 'committer', 'msg', 'files', 'timestamp', 'footerless_msg')
 fields_map = dict((attr, idx) for idx, attr in enumerate(fields))
+fake_fields = ('footerless_msg', 'timestamp')
 file_idx = fields_map['files']
 class record(namedtuple('record', fields)):
-  def safe_combine(self, other, file_idx=fields_map['files']):
+  def safe_combine(self, other):
     files = self.files.copy()
     assert not set(files).intersection(other.files), (files, other.files)
     files.update(other.files)
     items = list(self)
     items[file_idx] = files
     return self.__class__(*items)
+
+  def update_files(self, other):
+    files = self.files.copy()
+    files.update(other.files)
+    items = list(self)
+    items[file_idx] = files
+    return self.__class__(*items)
+
+  @staticmethod
+  def calculate_footerless_msg(msg):
+    return tuple(x for x in msg.splitlines()
+                 if x.split(':', 1)[0] not in known_footers)
 
 def deserialize_records(source, blob_idx):
   line = source.readline()
@@ -47,7 +107,7 @@ def deserialize_records(source, blob_idx):
         continue
       assert chunks[0] in ('author', 'committer', 'data')
       if chunks[0] != 'data':
-        d[chunks[0]] = chunks[1].strip()
+        d[chunks[0]] = intern(chunks[1].strip())
         continue
       # Process the commit message...
       size = int(chunks[1])
@@ -55,7 +115,9 @@ def deserialize_records(source, blob_idx):
       assert len(data) == size, (line, data)
       for func in mangler:
         data = func(data)
-      d['msg'] = data
+      # Throw away the prefixed/trailing whitespace- some of our manglers leave those behind
+      # unfortunately.  For fast-export reasons, a newline trailing is needed- but that should be it.
+      d['msg'] = data.strip() + "\n"
       line = source.readline()
       # Note that cvs2git writes slightly funky data statements; the byte count
       # doesn't necessarily include the trailing newline.
@@ -75,13 +137,13 @@ def deserialize_records(source, blob_idx):
       mode = line.split(None, 1)
       assert len(mode) == 2, line
       if mode[0] == 'D':
-        files[mode[1]] = (mode[0], line)
+        files[intern(os.path.normpath(mode[1]))] = (mode[0], line)
       elif mode[0] == 'M':
         # M 100644 e8b9ed651c6209820779382edee2537209aba4ae dev-cpp/gtkmm/ChangeLog
         # if it's not a sha1, but startswith ':'... then it's an index.
         chunks = line.split(None, 4)
         assert len(chunks) == 4, line
-        fname = chunks[3]
+        fname = intern(os.path.normpath(chunks[3]))
         if chunks[2][0] == ':':
           line = ' '.join(chunks[:2] + [blob_idx[int(chunks[2][1:])], fname])
         files[fname] = (mode[0], line)
@@ -97,6 +159,7 @@ def deserialize_records(source, blob_idx):
     chunks = d['author'].rsplit(None, 1)
     assert len(chunks) == 2 and chunks[1] == '+0000', d['author']
     d['timestamp'] = long(chunks[0].rsplit(None, 1)[1])
+    d['footerless_msg'] = record.calculate_footerless_msg(d['msg'])
     yield record(*[d.get(x) for x in fields])
     # Bleh... of course namedtuple doesn't make this easy.
     line = source.readline()
@@ -113,15 +176,15 @@ def serialize_records(records, handle, target='refs/heads/master', progress=5000
     write('mark :%i\n' % idx)
     # fields = ('mark', 'author', 'committer', 'msg', 'files')
     for name, value in zip(fields, record):
-      if name == 'files':
-        for filename in sorted(value):
-          write("%s\n" % (value[filename][1],))
-      elif name in ('mark', 'author', 'committer'):
+      if name in ('mark', 'author', 'committer'):
         write("%s %s\n" % (name, value))
+      elif name in fake_fields:
+        continue
       elif name == 'msg':
         write("data %i\n%s" % (len(value), value))
-      elif name == 'timestamp':
-        continue
+      elif name == 'files':
+        for filename in sorted(value):
+          write("%s\n" % (value[filename][1],))
       else:
         raise AssertionError("serialize is out of sync; don't know field %s" % name)
     write("\n")
@@ -132,9 +195,9 @@ def deserialize_blob_map(source):
 
 def simple_dedup(records):
   # dedup via timestamp/author/msg
-  dupes = {}
+  dupes = collections.defaultdict(list)
   for idx, record in enumerate(records):
-    dupes.setdefault((record.timestamp, record.author, record.msg), []).append((idx, record))
+    dupes[(record.timestamp, record.author, record.footerless_msg)].append((idx, record))
   mangled = []
   for key, value in dupes.iteritems():
     if len(value) == 1:
