@@ -65,7 +65,7 @@ mangler.append(functools.partial(
     mangle_portage))
 
 known_footers = ('Package-Manager', 'RepoMan-Options', 'Manifest-Sign-Key')
-fields = ('author', 'committer', 'msg', 'files', 'timestamp', 'footerless_msg')
+fields = ('author', 'msg', 'files', 'timestamp', 'footerless_msg')
 fields_map = dict((attr, idx) for idx, attr in enumerate(fields))
 fake_fields = ('footerless_msg', 'timestamp')
 file_idx = fields_map['files']
@@ -107,7 +107,7 @@ def deserialize_records(source, blob_idx):
         continue
       assert chunks[0] in ('author', 'committer', 'data')
       if chunks[0] != 'data':
-        d[chunks[0]] = intern(chunks[1].strip())
+        d[chunks[0]] = chunks[1].strip()
         continue
       # Process the commit message...
       size = int(chunks[1])
@@ -152,14 +152,18 @@ def deserialize_records(source, blob_idx):
       line = source.readline()
     d['files'] = files
     # Basic sanity check for the code above...
-    assert set(fields).issuperset(d), d
     d.setdefault('author', d.get('committer'))
     assert d['author'] is not None
+    assert d['author'] == d['committer'], d
+    d.pop('committer')
     # Skank the timestamp out...
     chunks = d['author'].rsplit(None, 1)
     assert len(chunks) == 2 and chunks[1] == '+0000', d['author']
-    d['timestamp'] = long(chunks[0].rsplit(None, 1)[1])
+    chunks = chunks[0].rsplit(None, 1)
+    d['timestamp'] = long(chunks[1])
+    d['author'] = intern(chunks[0])
     d['footerless_msg'] = record.calculate_footerless_msg(d['msg'])
+    assert set(fields).issuperset(d), d
     yield record(*[d.get(x) for x in fields])
     # Bleh... of course namedtuple doesn't make this easy.
     line = source.readline()
@@ -176,10 +180,13 @@ def serialize_records(records, handle, target='refs/heads/master', progress=5000
     write('mark :%i\n' % idx)
     # fields = ('mark', 'author', 'committer', 'msg', 'files')
     for name, value in zip(fields, record):
-      if name in ('mark', 'author', 'committer'):
-        write("%s %s\n" % (name, value))
-      elif name in fake_fields:
+      if name in fake_fields:
         continue
+      elif name == 'mark':
+        write("%s %s\n" % (name, value))
+      elif name == 'author':
+        val = "%s %i +0000" % (value, record.timestamp)
+        write('author %s\ncommitter %s\n' % (val, val))
       elif name == 'msg':
         write("data %i\n%s" % (len(value), value))
       elif name == 'files':
@@ -211,6 +218,49 @@ def simple_dedup(records):
   l = itertools.imap(operator.itemgetter(0), dupes.itervalues())
   return itertools.imap(operator.itemgetter(1), sorted(l, key=operator.itemgetter(0)))
 
+def manifest_dedup(records, backwards=(5*60)):
+  # While searching back 5 minutes is a bit much... it's happened more than one might
+  # think sadly.
+  slots = collections.defaultdict(list)
+  for idx, record in enumerate(records):
+    if len(record.files) != 1:
+      slots[record.timestamp].append((idx, record))
+      continue
+    manifest = record.files.items()[0]
+    # if it's a deletion, we don't care...
+    if not manifest[0].endswith('/Manifest') or manifest[1][0] == 'D':
+      slots[record.timestamp].append((idx, record))
+      continue
+    manifest_dir = os.path.dirname(manifest[0])
+    update = True
+    for timestamp in xrange(record.timestamp, max(0, record.timestamp - backwards), -1):
+      potential = slots.get(timestamp)
+      if potential is None:
+        continue
+      for update_pos, (idx, target) in enumerate(reversed(potential), 1):
+        # while intersecting pathways first is slower... we do it this way so that we can
+        # spot if another author stepped in for a directory- if that occurs, manifest recommit
+        # or not, we shouldn't mangle that history.
+        if all(manifest_dir != os.path.dirname(x) for x in target.files):
+          potential[0 - update_pos] = (idx, target.update_files(record))
+          continue
+        if (target.author == record.author and
+            target.footerless_msg == record.footerless_msg):
+          potential[-update_pos] = (idx, target.update_files(record))
+          # same author/msg; allow the combination.
+          update = False
+        # note if author/msg didn't match, this becomes a forced injection.
+        break
+
+    if update:
+      slots[record.timestamp].append((idx, record))
+  # And... do the collapse.
+  l = []
+  for value in slots.itervalues():
+    l.extend(value)
+  # Sort by idx, but strip idx on the way out.
+  return itertools.imap(operator.itemgetter(1), sorted(l, key=operator.itemgetter(0)))
+
 def main(argv):
   records = []
   # Be careful here to just iterate over source; doing so allows this script
@@ -224,10 +274,10 @@ def main(argv):
     if not os.path.exists(commits):
       sys.stderr.write("skipping %s; no commit data\n" % directory)
       continue
-    records.extend(
+    records.extend(manifest_dedup(
       deserialize_records(
         open(commits, 'r'),
-        deserialize_blob_map(open(os.path.join(tmp, 'git-blob.idx')))
+        deserialize_blob_map(open(os.path.join(tmp, 'git-blob.idx'))))
       )
     )
   sorter = operator.attrgetter('timestamp')
@@ -237,6 +287,7 @@ def main(argv):
   # This allows us to combine the history w/out losing the ordering per repo.
   records.sort(key=sorter)
   records[:] = simple_dedup(records)
+#  records[:] = manifest_dedup(records)
   serialize_records(records, sys.stdout)
   return 0
 
