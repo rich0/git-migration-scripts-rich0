@@ -168,14 +168,16 @@ def deserialize_records(source, blob_idx):
     # Bleh... of course namedtuple doesn't make this easy.
     line = source.readline()
 
-def serialize_records(records, handle, target='refs/heads/master', progress=5000):
+def serialize_records(records, handle, target='refs/heads/master', progress=100):
   write = handle.write
   write('reset %s\n' % target)
   total = len(records)
+  total_len = len(str(total))
+  progress_interval = max(1, total // progress)
   for idx, record in enumerate(records, 1):
-    if idx % progress == 0:
-      write('progress %02.1f%%: %i of %i commits\n'
-        % ((100 * float(idx))/total, idx, total))
+    if idx % progress_interval == 0:
+      write('progress %02.0f%%: %s of %i commits\n'
+        % ((100 * float(idx))/total, str(idx).rjust(total_len), total))
     write('commit %s\n' % target)
     write('mark :%i\n' % idx)
     # fields = ('mark', 'author', 'committer', 'msg', 'files')
