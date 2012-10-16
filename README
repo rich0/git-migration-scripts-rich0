@@ -43,3 +43,7 @@ Now that that is done, we have a recomposed history in refs/heads/master.
 From there, we do prun'ing/gc'ing, and force a git repack -Adf.
 
 That repo is ready to go at that point.
+
+
+For a full production run, ./script.sh --full # is the fastest form (basically allows the final linearization,
+deduplication, etc, to run in parallel as work is available.  not a huge gain, but shaves a minute off or so).

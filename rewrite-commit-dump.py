@@ -268,13 +268,23 @@ def main(argv):
   # Be careful here to just iterate over source; doing so allows this script
   # to do basic processing as it goes (specifically while it's being fed from
   # the mainline cvs2git parallelized repo creator).
-  source = argv if argv else sys.stdin
+  source = argv
+  if not argv:
+    # See python manpage for details; stdin buffers if you iterate over it;
+    # we want each line as they're available, thus use this form.
+    def source():
+      line = sys.stdin.readline()
+      while line:
+        yield line
+        line = sys.stdin.readline()
+    source = source()
   for directory in source:
     directory = directory.strip()
     tmp = os.path.join(directory, 'cvs2svn-tmp')
     commits = os.path.join(tmp, 'git-dump.dat')
     if not os.path.exists(commits):
       sys.stderr.write("skipping %s; no commit data\n" % directory)
+      sys.stderr.flush()
       continue
     records.extend(manifest_dedup(
       deserialize_records(

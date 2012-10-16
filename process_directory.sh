@@ -27,7 +27,7 @@ f() {
   set +x
 }
 
-[ $# -ne 1 ] && { echo "need an argument..."; exit 1; }
+[ $# -lt 1 ] && { echo "need an argument..."; exit 1; }
 
 base="$(pwd)"
 root="$(pwd)/cvs-repo"
@@ -42,3 +42,7 @@ mkdir -p "${output}"
 echo "processing ${1%,v}" >&2
 time f "$1" &> "${output}/"log || { echo "failed $1"; exit 1; }
 echo "processed  $1" >&2
+
+# Echo the completed pathway if we're in fast mode; this allows
+# create-git.sh to get a head start on this repo once we've finished.
+[ $# -eq 2 ] && echo "$(readlink -f "$final")" >&$2
