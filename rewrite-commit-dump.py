@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import functools
+import itertools
 import operator
 import os
 import re
@@ -15,7 +16,16 @@ mangler.append(functools.partial(
     r"Package-Manager: portage-\1"))
 
 fields = ('author', 'committer', 'msg', 'files', 'timestamp')
-record = namedtuple('record', fields)
+fields_map = dict((attr, idx) for idx, attr in enumerate(fields))
+file_idx = fields_map['files']
+class record(namedtuple('record', fields)):
+  def safe_combine(self, other, file_idx=fields_map['files']):
+    files = self.files.copy()
+    assert not set(files).intersection(other.files), (files, other.files)
+    files.update(other.files)
+    items = list(self)
+    items[file_idx] = files
+    return self.__class__(*items)
 
 def deserialize_records(source, blob_idx):
   line = source.readline()
@@ -117,6 +127,24 @@ def deserialize_blob_map(source):
   source = (x.strip().split() for x in source)
   return dict((int(x[0].lstrip(':')), x[1]) for x in source)
 
+def simple_dedup(records):
+  # dedup via timestamp/author/msg
+  dupes = {}
+  for idx, record in enumerate(records):
+    dupes.setdefault((record.timestamp, record.author, record.msg), []).append((idx, record))
+  mangled = []
+  for key, value in dupes.iteritems():
+    if len(value) == 1:
+      continue
+    value.sort(key=operator.itemgetter(0))
+    combined = value[0][1]
+    for idx, item in value[1:]:
+      combined = combined.safe_combine(item)
+    value[:] = [(value[0][0], combined)]
+    mangled.append((key, value))
+  l = itertools.imap(operator.itemgetter(0), dupes.itervalues())
+  return itertools.imap(operator.itemgetter(1), sorted(l, key=operator.itemgetter(0)))
+
 def main(argv):
   records = []
   source = argv if argv else sys.stdin
@@ -127,10 +155,19 @@ def main(argv):
     if not os.path.exists(commits):
       sys.stderr.write("skipping %s; no commit data\n" % directory)
       continue
-    blob_index = deserialize_blob_map(open(os.path.join(tmp, 'git-blob.idx')))
-    records.extend(deserialize_records(open(commits, 'r'), blob_index))
-  records.sort(key=operator.attrgetter('timestamp'))
-  #records = list(deserialize_records(source))
+    records.extend(
+      deserialize_records(
+        open(commits, 'r'),
+        deserialize_blob_map(open(os.path.join(tmp, 'git-blob.idx')))
+      )
+    )
+  sorter = operator.attrgetter('timestamp')
+  # Get them into timestamp ordering first; this is abusing python stable
+  # sort pretty much since any commits to the same repo w/ the same timestamp
+  # will still have their original ordering (just that chunk will be moved).
+  # This allows us to combine the history w/out losing the ordering per repo.
+  records.sort(key=sorter)
+  records[:] = simple_dedup(records)
   serialize_records(records, sys.stdout)
   return 0
 
