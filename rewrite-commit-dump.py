@@ -213,9 +213,12 @@ def simple_dedup(records):
 
 def main(argv):
   records = []
+  # Be careful here to just iterate over source; doing so allows this script
+  # to do basic processing as it goes (specifically while it's being fed from
+  # the mainline cvs2git parallelized repo creator).
   source = argv if argv else sys.stdin
-  directories = [x.strip() for x in source]
-  for directory in directories:
+  for directory in source:
+    directory = directory.strip()
     tmp = os.path.join(directory, 'cvs2svn-tmp')
     commits = os.path.join(tmp, 'git-dump.dat')
     if not os.path.exists(commits):
