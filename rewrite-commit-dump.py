@@ -1,12 +1,35 @@
 #!/usr/bin/python
+import contextlib
 import collections
 import functools
+import mmap
 import itertools
 import operator
 import os
 import re
 import sys
 from collections import namedtuple
+
+@contextlib.contextmanager
+def mmap_open(path):
+  handle = fd = None
+  try:
+    fd = os.open(path, os.O_RDONLY)
+    handle = mmap.mmap(fd, os.fstat(fd).st_size, mmap.MAP_SHARED, mmap.PROT_READ)
+    os.close(fd)
+    fd = None
+    yield handle
+  finally:
+    if fd:
+      os.close(fd)
+    if handle:
+      handle.close()
+
+def readline_iterate(handle):
+  line = handle.readline()
+  while line:
+    yield line
+    line = handle.readline()
 
 mangler = []
 mangler.append(functools.partial(
@@ -198,9 +221,10 @@ def serialize_records(records, handle, target='refs/heads/master', progress=100)
         raise AssertionError("serialize is out of sync; don't know field %s" % name)
     write("\n")
 
-def deserialize_blob_map(source):
-  source = (x.strip().split() for x in source)
-  return dict((int(x[0].lstrip(':')), x[1]) for x in source)
+def deserialize_blob_map(path):
+  with mmap_open(path) as handle:
+    source = (x.strip().split() for x in readline_iterate(handle))
+    return dict((int(x[0].lstrip(':')), x[1]) for x in source)
 
 def simple_dedup(records):
   # dedup via timestamp/author/msg
@@ -272,12 +296,7 @@ def main(argv):
   if not argv:
     # See python manpage for details; stdin buffers if you iterate over it;
     # we want each line as they're available, thus use this form.
-    def source():
-      line = sys.stdin.readline()
-      while line:
-        yield line
-        line = sys.stdin.readline()
-    source = source()
+    source = readline_iterate(sys.stdin)
   for directory in source:
     directory = directory.strip()
     tmp = os.path.join(directory, 'cvs2svn-tmp')
@@ -286,12 +305,16 @@ def main(argv):
       sys.stderr.write("skipping %s; no commit data\n" % directory)
       sys.stderr.flush()
       continue
-    records.extend(manifest_dedup(
-      deserialize_records(
-        open(commits, 'r'),
-        deserialize_blob_map(open(os.path.join(tmp, 'git-blob.idx'))))
+    with mmap_open(commits) as data:
+      records.extend(
+        manifest_dedup(
+          deserialize_records(data,
+            deserialize_blob_map(
+              os.path.join(tmp, 'git-blob.idx')
+            )
+          )
+        )
       )
-    )
   sorter = operator.attrgetter('timestamp')
   # Get them into timestamp ordering first; this is abusing python stable
   # sort pretty much since any commits to the same repo w/ the same timestamp
