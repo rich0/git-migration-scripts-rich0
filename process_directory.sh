@@ -19,7 +19,9 @@ f() {
   # Note we're only pull in blob data here; this intentional- we need to
   # interlace the commit objects together, these git object pools will be
   # be used as alternates for the final repo combination.
-  "${base}/rewrite-blob-data.py" ../cvs2svn-tmp/git-blob.dat | \
+  sed -re \
+    's|\$Header: '"$(readlink -f "$(pwd)")"'/*output/.*/cvs-repo/|$Header: /var/cvsroot/|g' \
+    ../cvs2svn-tmp/git-blob.dat | \
     git fast-import --export-marks=../cvs2svn-tmp/git-blob.idx
   rm -rf "${final}"
   cd "$root"
