@@ -13,7 +13,7 @@ f() {
   # Note- this must be canonical path, else it screws up our $Header rewriting.
   cd "$(readlink -f "${output}" )"
   export PYTHONPATH="${output}${PYTHONPATH:+:${PYTHONPATH}}"
-  time cvs2git --options config -vv
+  time cvs2git --options config -v
   cd git
   git init --bare
   # Note we're only pull in blob data here; this intentional- we need to

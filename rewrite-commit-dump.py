@@ -201,7 +201,7 @@ def serialize_records(records, handle, target='refs/heads/master', progress=100)
   for idx, record in enumerate(records, 1):
     if idx % progress_interval == 0:
       write('progress %s%%: %s of %i commits\n'
-        % (str((100 * float(idx))/total).rjust(2), str(idx).rjust(total_len), total))
+        % (str(int(100 * (float(idx)/total))).rjust(2), str(idx).rjust(total_len), total))
     write('commit %s\n' % target)
     write('mark :%i\n' % idx)
     # fields = ('mark', 'author', 'committer', 'msg', 'files')
@@ -295,7 +295,7 @@ import traceback
 def process_record(data):
   try:
     return _process_record(data)
-  except Exception, e:
+  except Exception:
     return traceback.format_exc()
 
 def _process_record(data):
@@ -343,10 +343,8 @@ def thin_manifest_conversion(records, processing_pool):
       potentials.append((idx, manifests, record))
 
   rewrites = deletes = 0
-  processed = 0
   for result in processing_pool.imap_unordered(
       process_record, potentials, chunksize=30):
-    processed += 1
     if result is not None:
       if not isinstance(result, tuple):
         raise Exception(result)
@@ -369,8 +367,9 @@ def process_directory(paths):
         deserialize_records(data, deserialize_blob_map(idx_path))))
 
 def main(argv):
-  # allocate the pool now, before we start getting memory abusive
-  clean_pool = multiprocessing.Pool()
+  # allocate the pool now, before we start getting memory abusive; this is
+  # used for thin-manifest conversion if active/enabled.
+  #clean_pool = multiprocessing.Pool()
 
   # Be careful here to just iterate over source; doing so allows this script
   # to do basic processing as it goes (specifically while it's being fed from

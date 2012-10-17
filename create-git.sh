@@ -48,7 +48,7 @@ time {
   ( cd "${root}"; ./rewrite-commit-dump.py; ) | \
   ( read line; { echo "$line"; cat; } | \
       tee ../export-stream-rewritten |\
-      time git fast-import
+      git fast-import
   )
 } 2>&1 > >(tee git-creation.log)
 ret=$?
