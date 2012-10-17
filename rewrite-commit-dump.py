@@ -2,13 +2,14 @@
 import contextlib
 import collections
 import functools
-import mmap
 import itertools
+import mmap
+import multiprocessing
 import operator
 import os
 import re
+import subprocess
 import sys
-from collections import namedtuple
 
 @contextlib.contextmanager
 def mmap_open(path):
@@ -92,7 +93,7 @@ fields = ('author', 'msg', 'files', 'timestamp', 'footerless_msg')
 fields_map = dict((attr, idx) for idx, attr in enumerate(fields))
 fake_fields = ('footerless_msg', 'timestamp')
 file_idx = fields_map['files']
-class record(namedtuple('record', fields)):
+class record(collections.namedtuple('record', fields)):
   def safe_combine(self, other):
     files = self.files.copy()
     assert not set(files).intersection(other.files), (files, other.files)
@@ -103,7 +104,7 @@ class record(namedtuple('record', fields)):
 
   def update_files(self, other):
     files = self.files.copy()
-    files.update(other.files)
+    files.update(other.files if isinstance(other, record) else other)
     items = list(self)
     items[file_idx] = files
     return self.__class__(*items)
@@ -199,8 +200,8 @@ def serialize_records(records, handle, target='refs/heads/master', progress=100)
   progress_interval = max(1, total // progress)
   for idx, record in enumerate(records, 1):
     if idx % progress_interval == 0:
-      write('progress %02.0f%%: %s of %i commits\n'
-        % ((100 * float(idx))/total, str(idx).rjust(total_len), total))
+      write('progress %s%%: %s of %i commits\n'
+        % (str((100 * float(idx))/total).rjust(2), str(idx).rjust(total_len), total))
     write('commit %s\n' % target)
     write('mark :%i\n' % idx)
     # fields = ('mark', 'author', 'committer', 'msg', 'files')
@@ -287,8 +288,90 @@ def manifest_dedup(records, backwards=(5*60)):
   # Sort by idx, but strip idx on the way out.
   return itertools.imap(operator.itemgetter(1), sorted(l, key=operator.itemgetter(0)))
 
+def get_blob(sha1):
+  return subprocess.check_output(['git', 'show', sha1], cwd='git')
+
+import traceback
+def process_record(data):
+  try:
+    return _process_record(data)
+  except Exception, e:
+    return traceback.format_exc()
+
+def _process_record(data):
+  idx, manifests, record = data
+  rewritten_record = record
+  for fname, data in manifests:
+    # Hacky, but it's just a test..
+    chunked = data[1].split()
+    sha1 = chunked[2]
+    blob = get_blob(sha1)
+    if '-----BEGIN PGP SIGNATURE-----' in blob:
+      continue
+    # Don't touch any old v1 manifests...
+    blob = [x for x in blob.splitlines() if x]
+    if not blob:
+      # Empty manifest?  The hell?
+      continue
+    if any(x.startswith('MD5') for x in blob):
+      continue
+    blob2 = [x for x in blob if x.startswith('DIST')]
+    if not blob or blob2 != blob:
+      if blob2:
+        p = subprocess.Popen(['git', 'hash-object', '-w', '--stdin', '--path', fname],
+                             cwd='git', stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+        stdout, _ = p.communicate("\n".join(blob2))
+        assert p.wait() == 0
+        new_sha1 = stdout.strip()
+        assert len(new_sha1) == 40, new_sha1
+        rewritten_record = rewritten_record.update_files(
+          {fname:(data[0], " ".join(chunked[:2] + [new_sha1, fname]))})
+      else:
+        rewritten_record = rewritten_record.update_files({})
+        del rewritten_record.files[fname]
+  if rewritten_record is not record:
+    return (idx, record)
+  else:
+    return None
+
+def thin_manifest_conversion(records, processing_pool):
+  potentials = []
+  for idx, record in enumerate(records):
+    manifests = [(fname, data) for fname, data in record.files.iteritems()
+                 if fname.endswith('/Manifest') and data[0] != 'D']
+    if manifests:
+      potentials.append((idx, manifests, record))
+
+  rewrites = deletes = 0
+  processed = 0
+  for result in processing_pool.imap_unordered(
+      process_record, potentials, chunksize=30):
+    processed += 1
+    if result is not None:
+      if not isinstance(result, tuple):
+        raise Exception(result)
+
+      idx, value = result
+      if not value.files:
+        # Just drop the commit.
+        value = None
+        deletes += 1
+      else:
+        records[idx] = value
+        rewrites += 1
+  sys.stderr.write("potential:%i, deletes: %i, rewrites:%i\n" % (len(potentials), deletes, rewrites))
+  return itertools.ifilter(None, records)
+
+def process_directory(paths):
+  commit_path, idx_path = paths
+  with mmap_open(commit_path) as data:
+    return tuple(manifest_dedup(
+        deserialize_records(data, deserialize_blob_map(idx_path))))
+
 def main(argv):
-  records = []
+  # allocate the pool now, before we start getting memory abusive
+  clean_pool = multiprocessing.Pool()
+
   # Be careful here to just iterate over source; doing so allows this script
   # to do basic processing as it goes (specifically while it's being fed from
   # the mainline cvs2git parallelized repo creator).
@@ -297,24 +380,25 @@ def main(argv):
     # See python manpage for details; stdin buffers if you iterate over it;
     # we want each line as they're available, thus use this form.
     source = readline_iterate(sys.stdin)
-  for directory in source:
-    directory = directory.strip()
-    tmp = os.path.join(directory, 'cvs2svn-tmp')
-    commits = os.path.join(tmp, 'git-dump.dat')
-    if not os.path.exists(commits):
-      sys.stderr.write("skipping %s; no commit data\n" % directory)
-      sys.stderr.flush()
-      continue
-    with mmap_open(commits) as data:
-      records.extend(
-        manifest_dedup(
-          deserialize_records(data,
-            deserialize_blob_map(
-              os.path.join(tmp, 'git-blob.idx')
-            )
-          )
-        )
-      )
+  def consumable():
+    for directory in source:
+      directory = directory.strip()
+      tmp = os.path.join(directory, 'cvs2svn-tmp')
+      commits = os.path.join(tmp, 'git-dump.dat')
+      if not os.path.exists(commits):
+        sys.stderr.write("skipping %s; no commit data\n" % directory)
+        sys.stderr.flush()
+        continue
+      yield (commits, os.path.join(tmp, 'git-blob.idx'))
+  records = []
+  record_generator = multiprocessing.Pool()
+  for result in record_generator.imap_unordered(process_directory, consumable()):
+    records.extend(result)
+  record_generator.close()
+  record_generator.join()
+  del record_generator
+  sys.stderr.write("All commits loaded.. starting dedup runs\n")
+  sys.stderr.flush()
   sorter = operator.attrgetter('timestamp')
   # Get them into timestamp ordering first; this is abusing python stable
   # sort pretty much since any commits to the same repo w/ the same timestamp
@@ -323,6 +407,7 @@ def main(argv):
   records.sort(key=sorter)
   records[:] = simple_dedup(records)
 #  records[:] = manifest_dedup(records)
+#  records[:] = thin_manifest_conversion(records, clean_pool)
   serialize_records(records, sys.stdout)
   return 0
 

@@ -23,11 +23,9 @@ update_alternates() {
     echo "$l/git/objects" >> "${alternates}"
     echo "$l"
   done
-  echo "starting history linearizing/rewriting" >&2
 }
 
 standalone_mode() {
-  echo "loading all commits" >&2
   find ../final/ -maxdepth 1 -mindepth 1 -printf '../final/%P/\n' | \
     xargs -n1 readlink -f | update_alternates
 }
@@ -36,7 +34,6 @@ if [ "$1" == --fast ]; then
   command=update_alternates
 else
   command=standalone_mode
-  echo "loading all commits in parallel to their generation..." >&2
 fi
 
 # Roughly; since alternates are updated as we go- and since rewrite-commit-dump
@@ -44,9 +41,11 @@ fi
 # to delay fast-import's startup until we know we have data (meaning linearize
 # has finished- thus the alternates are all in place).
 # Bit tricky, but the gains have been worth it.
+# Regarding the misc cd'ing that occurs- this is to position things where the
+# scripts expect to be positions.
 time {
   ${command} | \
-  "${root}/rewrite-commit-dump.py" | \
+  ( cd "${root}"; ./rewrite-commit-dump.py; ) | \
   ( read line; { echo "$line"; cat; } | \
       tee ../export-stream-rewritten |\
       time git fast-import
