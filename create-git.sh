@@ -15,8 +15,7 @@ git config prune.expire now
 mkdir -p objects/info
 
 update_alternates() {
-  local alternates="$(readlink -f objects/info)/alternates"
-  cd "${root}"
+  local alternates="$(readlink -f "${git_root}/objects/info")/alternates"
   while read l; do
     l=$(readlink -f "$l")
     [ -e "$l/cvs2svn-tmp/git-dump.dat" ] || { echo "ignoring nonexistant alternates source $l" >&2; continue; }
@@ -26,7 +25,7 @@ update_alternates() {
 }
 
 standalone_mode() {
-  find ../final/ -maxdepth 1 -mindepth 1 -printf '../final/%P/\n' | \
+  find final/ -maxdepth 1 -mindepth 1 -printf 'final/%P/\n' | \
     xargs -n1 readlink -f | update_alternates
 }
 
@@ -40,25 +39,22 @@ fi
 # doesn't actually output anything till it's linearized the history, we have
 # to delay fast-import's startup until we know we have data (meaning linearize
 # has finished- thus the alternates are all in place).
-# Bit tricky, but the gains have been worth it.
-# Regarding the misc cd'ing that occurs- this is to position things where the
-# scripts expect to be positions.
+# Bit tricky, but the gains have been worth it in performance- plus it means we
+# we can discard the rewrite-commit-dump.py instance (~1.8GB ram release).
+cd "${root}"
 time {
-  ${command} | \
-  ( cd "${root}"; ./rewrite-commit-dump.py; ) | \
-  ( read line; { echo "$line"; cat; } | \
-      tee ../export-stream-rewritten |\
-      git fast-import
-  )
+  ${command} | ./rewrite-commit-dump.py > export-stream-rewritten;
+  time git --git-dir "${git_root}" fast-import < export-stream-rewritten;
 } 2>&1 > >(tee git-creation.log)
 ret=$?
 [ $ret -eq 0 ] || { echo "none zero exit... the hell? $ret"; exit 1; }
 
+cd "${git_root}"
 echo "recomposed; repacking and breaking alternate linkage..."
 # Localize the content we actual use out of the alternates...
 time git repack -Adf --window=100 --depth=100
 # Wipe the alternates.
-rm objects/info/alternates || { echo "no alternates means no sources..."; exit 2; }
+rm "${git_root}/objects/info/alternates" || { echo "no alternates means no sources..."; exit 2; }
 echo "doing cleanup..."
 time git prune
 echo "doing basic sanity check"
