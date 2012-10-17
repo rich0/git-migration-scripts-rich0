@@ -70,10 +70,8 @@ def mangle_portage(match, allowed=frozenset('abcdef0123456789')):
     if signage in ('key', 'ultrabug'):
       # Known bad keys; this is why portage needs to do basic enforcement...
       signage = None
-    elif '@' in signage:
-      # Bleh.  be paranoid, ensure case wasn't affected.
-      assert signage in content, (signage, content)
-      signage = '<%s>' % signage
+    elif signage in ('williamh@gentoo.org', 'w.d.hubbs@gmail.com'):
+      signage = '30C46538'
     elif signage.endswith('!'):
       assert allowed.issuperset(signage[:-1]), content
     else:

@@ -47,3 +47,9 @@ That repo is ready to go at that point.
 
 For a full production run, ./script.sh --full # is the fastest form (basically allows the final linearization,
 deduplication, etc, to run in parallel as work is available.  not a huge gain, but shaves a minute off or so).
+
+Finally, certain conversion have occured commit message wise; git footers now exist,
+standardizing the package-manager/signingkey/repoman footers.
+
+In particularly, the signing 'key' of 'ultrabug' was removed (user from far in the past).
+Additionally, 'wiliamh@gentoo.org' was converted to 0x30C46538 (the actual key; done to standardize it).
