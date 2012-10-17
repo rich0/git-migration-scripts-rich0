@@ -4,7 +4,7 @@ command='
        -e "s/^\([Pp]ortage version: (.*)\)$/Package-manager: Portage \1/"'
 f() {
   set -x
-  mkdir -p "${output}"/{git{,-work},cvs-repo/gentoo-x86/Attic}
+  mkdir -p "${output}"/{git,cvs-repo/gentoo-x86/Attic}
   ln -s "${cvsroot}" "${output}/cvs-repo/CVSROOT"
   ln -s "${root}/gentoo-x86/$1" "${output}/cvs-repo/gentoo-x86/$1"
   #ln -s "${root}/gentoo-x86/Attic" "${output}/cvs-repo/gentoo-x86/Attic"
