@@ -55,8 +55,6 @@ echo "recomposed; repacking and breaking alternate linkage..."
 time git repack -Adf --window=100 --depth=100
 # Wipe the alternates.
 rm "${git_root}/objects/info/alternates" || { echo "no alternates means no sources..."; exit 2; }
-echo "doing cleanup..."
-time git prune
 echo "doing basic sanity check"
 time git log -p refs/heads/master > /dev/null || echo "non zero exit code from git log run..."
 echo "Done"
