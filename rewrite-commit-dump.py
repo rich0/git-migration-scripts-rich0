@@ -196,7 +196,7 @@ def serialize_records(records, handle, target='refs/heads/master', progress=100)
   total = len(records)
   total_len = len(str(total))
   progress_interval = max(1, total // progress)
-  for idx, record in enumerate(records, 1):
+  for idx, record in enumerate(sorted(records, key=lambda x:(x.timestamp,sorted(x.files),x.author,x.footerless_msg)), 1):
     if idx % progress_interval == 0:
       write('progress %s%%: %s of %i commits\n'
         % (str(int(100 * (float(idx)/total))).rjust(2), str(idx).rjust(total_len), total))
