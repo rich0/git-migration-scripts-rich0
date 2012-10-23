@@ -1,17 +1,15 @@
 #!/bin/bash
-command='
-  sed -re "s/^\(paludis (0.1.*)\)$/Package-manager: Paludis \1/" \
-       -e "s/^\([Pp]ortage version: (.*)\)$/Package-manager: Portage \1/"'
+
 f() {
   set -x
   mkdir -p "${output}"/{git,cvs-repo/gentoo-x86/Attic}
   ln -s "${cvsroot}" "${output}/cvs-repo/CVSROOT"
   ln -s "${root}/gentoo-x86/$1" "${output}/cvs-repo/gentoo-x86/$1"
   #ln -s "${root}/gentoo-x86/Attic" "${output}/cvs-repo/gentoo-x86/Attic"
-  ln -s "$(pwd)/config" "${output}/config"
-  ln -s "$(pwd)/gentoo_mailmap.py" "${output}/gentoo_mailmap.py"
+  ln -s "${base}/config" "${output}/config"
+  ln -s "${base}/gentoo_mailmap.py" "${output}/gentoo_mailmap.py"
   # Note- this must be canonical path, else it screws up our $Header rewriting.
-  cd "$(readlink -f "${output}" )"
+  pushd "$(readlink -f "${output}" )"
   export PYTHONPATH="${output}${PYTHONPATH:+:${PYTHONPATH}}"
   time cvs2git --options config -v
   cd git
@@ -19,24 +17,25 @@ f() {
   # Note we're only pull in blob data here; this intentional- we need to
   # interlace the commit objects together, these git object pools will be
   # be used as alternates for the final repo combination.
-  sed -re \
-    's|\$Header: '"$(readlink -f "$(pwd)")"'/*output/.*/cvs-repo/|$Header: /var/cvsroot/|g' \
-    ../cvs2svn-tmp/git-blob.dat | \
+  "${base}/rewrite-git-blob.py" \
+    ../cvs2svn-tmp/git-blob.dat "${output}/cvs-repo" | \
+    tee ../cvs2svn-tmp/rewritten-blob.dat | \
     git fast-import --export-marks=../cvs2svn-tmp/git-blob.idx
+  popd
   rm -rf "${final}"
-  cd "$root"
   mv "$output" "${final}"
   set +x
 }
 
 [ $# -lt 1 ] && { echo "need an argument..."; exit 1; }
 
+cd "$(readlink -f "$(pwd)")"
 base="$(pwd)"
-root="$(pwd)/cvs-repo"
+root="${base}/cvs-repo"
 cvsroot="${root}/CVSROOT"
 repo="${root}/gentoo-x86"
-output="$(pwd)/output/${1%,v}"
-final="$(pwd)/final/$1"
+output="${base}/output/${1%,v}"
+final="${base}/final/$1"
 mkdir -p "$(dirname "${final}")"
 
 rm -rf "${output}"
