@@ -6,3 +6,5 @@
 /export-stream-rewritten
 /userinfo.xml
 /gentoo_mailmap.py*
+*.pyc
+*.pyo
