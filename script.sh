@@ -20,5 +20,5 @@ fast=false
 if [ "$1" == --fast ]; then
   f 300 300> >(time ./create-git.sh --fast)
 else
-  f
+  f && ./create-git.sh
 fi
