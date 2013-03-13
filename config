@@ -147,8 +147,8 @@ ctx.revision_recorder = SimpleFulltextRevisionRecorderAdapter(
     # how to invoke the "co" executable.
     #
     # Uncomment one of the two following lines:
-    RCSRevisionReader(co_executable=r'co'),
-    #CVSRevisionReader(cvs_executable=r'cvs'),
+    #RCSRevisionReader(co_executable=r'co'),
+    CVSRevisionReader(cvs_executable=r'cvs'),
 
     # The file in which to write the git-fast-import stream that
     # contains the file revision contents:
@@ -183,7 +183,7 @@ ctx.trunk_only = True
 ctx.cvs_author_decoder = CVSTextDecoder(
     [
         #'latin1',
-        #'utf8',
+        'utf8',
         'ascii',
         ],
     fallback_encoding='latin1'
@@ -191,7 +191,7 @@ ctx.cvs_author_decoder = CVSTextDecoder(
 ctx.cvs_log_decoder = CVSTextDecoder(
     [
         #'latin1',
-        #'utf8',
+        'utf8',
         'ascii',
         ],
     fallback_encoding='latin1'
@@ -201,7 +201,7 @@ ctx.cvs_log_decoder = CVSTextDecoder(
 ctx.cvs_filename_decoder = CVSTextDecoder(
     [
         #'latin1',
-        #'utf8',
+        'utf8',
         'ascii',
         ],
     #fallback_encoding='ascii'
