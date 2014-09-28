@@ -376,6 +376,9 @@ global_symbol_strategy_rules = [
 # translated into a git-style name by the author_transforms map.
 ctx.username = 'cvs2svn'
 
+def dont_expand_keywords(cvs_file):
+  return ( cvs_file.mode == 'b' or cvs_file.mode == 'o' )
+
 # ctx.file_property_setters and ctx.revision_property_setters contain
 # rules used to set the svn properties on files in the converted
 # archive.  For each file, the rules are tried one by one.  Any rule
@@ -451,9 +454,9 @@ ctx.file_property_setters.extend([
     # The following causes keywords to be untouched in binary files and
     # collapsed in all text to be committed:
     ConditionalPropertySetter(
-        cvs_file_is_binary, KeywordHandlingPropertySetter('untouched'),
+        dont_expand_keywords , KeywordHandlingPropertySetter('untouched'),
         ),
-    KeywordHandlingPropertySetter('collapsed'),
+    KeywordHandlingPropertySetter('expanded'),
 
     ])
 ctx.revision_property_setters.extend([
