@@ -47,6 +47,7 @@ mangler.append(functools.partial(
 def process_stream(source, output_dir, output):
   header = os.path.normpath(os.path.abspath(output_dir))
   header = "$Header: %s" % output_dir
+  sourcekeyword = "$Source: %s" % output_dir
   line = source.readline()
   while line:
     chunks = line.split()
@@ -56,6 +57,7 @@ def process_stream(source, output_dir, output):
       data = source.read(size)
       assert len(data) == size, (line, data)
       data = data.replace(header, "$Header: /var/cvsroot")
+      data = data.replace(sourcekeyword, "%Source: /var/cvsroot")
       line = 'data %i\n%s' % (len(data), data)
     output.write(line)
     line = source.readline()
