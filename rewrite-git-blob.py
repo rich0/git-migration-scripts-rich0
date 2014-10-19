@@ -48,6 +48,7 @@ def process_stream(source, output_dir, output):
   header = os.path.normpath(os.path.abspath(output_dir))
   header = "$Header: %s" % output_dir
   sourcekeyword = "$Source: %s" % output_dir
+  atticsearch = re.compile(r': /var/cvsroot/.*/Attic/')
   line = source.readline()
   while line:
     chunks = line.split()
@@ -59,6 +60,8 @@ def process_stream(source, output_dir, output):
       data = data.replace(header, "$Header: /var/cvsroot")
       data = data.replace(sourcekeyword, "$Source: /var/cvsroot")
       data = data.replace("$Name: not supported by cvs2svn $", "$Name:  $")
+      if atticsearch.search(data):
+        data = data.replace("Attic/", "")
       line = 'data %i\n%s' % (len(data), data)
     output.write(line)
     line = source.readline()
